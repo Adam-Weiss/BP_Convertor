@@ -12,13 +12,14 @@ def _apply_pulse_policy(m: Measurement, options: ConversionOptions) -> None:
         return
     if options.missing_pulse_policy == "empty":
         return
-    if options.missing_pulse_policy in {"fixed", "user"}:
-        if options.fixed_pulse_value is not None:
-            m.pulse = options.fixed_pulse_value
-            m.corrections_applied.append(f"pulse_filled:{options.fixed_pulse_value}")
+    if options.missing_pulse_policy in {"fixed", "user"} and options.fixed_pulse_value is not None:
+        m.pulse = options.fixed_pulse_value
+        m.corrections_applied.append(f"pulse_filled:{options.fixed_pulse_value}")
+        m.warnings.append(f"missing pulse filled with {options.fixed_pulse_value}")
 
 
 def validate_measurements(measurements: List[Measurement], options: ConversionOptions) -> List[Measurement]:
+    """Apply validation/corrections and attach warnings/notes."""
     for m in measurements:
         extra_notes = []
         if options.correct_swapped_sys_dia and m.sys < m.dia:

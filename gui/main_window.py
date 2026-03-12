@@ -12,7 +12,7 @@ from bp_converter.writer import ALLOWED_COLUMNS
 from gui.view_models import GuiState, ResultSummary
 from gui.widgets import append_text, clear_text, labeled_entry, set_widget_state
 
-DATETIME_HELP = "YYYY-MM-DD HH:MM:SS"
+DATETIME_HELP = "YYYY-MM-DD HH:MM[:SS]"
 
 
 class ConverterApp:
@@ -38,9 +38,9 @@ class ConverterApp:
         self.summary_labels: dict[str, ttk.Label] = {}
         self.convert_button: Optional[ttk.Button] = None
         self.column_checks: list[ttk.Checkbutton] = []
-        self.columns_frame: Optional[ttk.LabelFrame] = None
         self.pulse_entry: Optional[ttk.Entry] = None
         self.details_text: Optional[tk.Text] = None
+        self.status_bar_label: Optional[ttk.Label] = None
 
         self._build_ui()
 
@@ -56,6 +56,7 @@ class ConverterApp:
         self._build_controls_section(main)
         self._build_summary_section(main)
         self._build_details_section(main)
+        self._build_status_bar(main)
 
     def _build_file_section(self, parent: ttk.Frame) -> None:
         frame = ttk.LabelFrame(parent, text="File selection", padding=8)
@@ -106,10 +107,10 @@ class ConverterApp:
         labeled_entry(frame, f"End ({DATETIME_HELP})", self.end_var, row=1)
 
     def _build_columns_section(self, parent: ttk.Frame) -> None:
-        self.columns_frame = ttk.LabelFrame(parent, text="XLSX column selection", padding=8)
-        self.columns_frame.pack(fill="x", pady=4)
+        frame = ttk.LabelFrame(parent, text="XLSX column selection", padding=8)
+        frame.pack(fill="x", pady=4)
         for idx, col in enumerate(ALLOWED_COLUMNS):
-            cb = ttk.Checkbutton(self.columns_frame, text=col, variable=self.column_vars[col])
+            cb = ttk.Checkbutton(frame, text=col, variable=self.column_vars[col])
             cb.grid(row=idx // 4, column=idx % 4, sticky="w", padx=4, pady=2)
             self.column_checks.append(cb)
         self._sync_output_mode()
@@ -152,6 +153,10 @@ class ConverterApp:
         self.details_text.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
 
+    def _build_status_bar(self, parent: ttk.Frame) -> None:
+        self.status_bar_label = ttk.Label(parent, textvariable=self.status_var, relief="sunken", anchor="w")
+        self.status_bar_label.pack(fill="x", pady=(4, 0))
+
     def _choose_input_file(self) -> None:
         path = filedialog.askopenfilename(
             title="Select input file",
@@ -160,6 +165,7 @@ class ConverterApp:
         if path:
             self.input_var.set(path)
             self.file_type_var.set(f"Detected type: {Path(path).suffix.lower()}")
+            self.status_var.set("Input selected")
 
     def _choose_output_file(self) -> None:
         ext = ".csv" if self.output_format_var.get() == "smartbp_csv" else ".xlsx"
@@ -173,8 +179,7 @@ class ConverterApp:
 
     def _sync_output_mode(self) -> None:
         is_xlsx = self.output_format_var.get() == "normalized_xlsx"
-        state = "normal" if is_xlsx else "disabled"
-        set_widget_state(self.column_checks, state)
+        set_widget_state(self.column_checks, "normal" if is_xlsx else "disabled")
 
     def _sync_pulse_state(self) -> None:
         if not self.pulse_entry:
@@ -191,16 +196,37 @@ class ConverterApp:
                 return datetime.strptime(value, fmt)
             except ValueError:
                 continue
-        raise ValueError(f"Invalid datetime '{value}', expected {DATETIME_HELP}")
+        raise ValueError(f"Invalid datetime '{value}'. Expected {DATETIME_HELP}.")
 
     def _read_state(self) -> GuiState:
-        source = int(self.source_var.get().strip() or "0")
+        source_text = self.source_var.get().strip() or "0"
+        try:
+            source = int(source_text)
+        except ValueError as exc:
+            raise ValueError("Source must be an integer.") from exc
+
         pulse_policy = self.pulse_policy_var.get()
-        pulse_value = self.pulse_value_var.get().strip()
+        pulse_value_text = self.pulse_value_var.get().strip()
         selected_columns = [name for name, var in self.column_vars.items() if var.get()]
 
         if self.output_format_var.get() == "normalized_xlsx" and not selected_columns:
-            raise ValueError("Select at least one XLSX column")
+            raise ValueError("Select at least one XLSX column.")
+
+        pulse_value: Optional[int] = None
+        if pulse_policy in {"fixed", "user"}:
+            if not pulse_value_text:
+                raise ValueError("Pulse value is required when pulse policy is fixed/user.")
+            try:
+                pulse_value = int(pulse_value_text)
+            except ValueError as exc:
+                raise ValueError("Pulse value must be an integer.") from exc
+            if pulse_value <= 0:
+                raise ValueError("Pulse value must be positive.")
+
+        start = self._parse_datetime(self.start_var.get())
+        end = self._parse_datetime(self.end_var.get())
+        if start and end and start > end:
+            raise ValueError("Start datetime must be earlier than or equal to end datetime.")
 
         return GuiState(
             input_path=self.input_var.get().strip(),
@@ -208,9 +234,9 @@ class ConverterApp:
             output_format=self.output_format_var.get(),
             source=source,
             missing_pulse_policy=pulse_policy,
-            pulse_value=int(pulse_value) if pulse_value else None,
-            filter_start=self._parse_datetime(self.start_var.get()),
-            filter_end=self._parse_datetime(self.end_var.get()),
+            pulse_value=pulse_value,
+            filter_start=start,
+            filter_end=end,
             include_stats=self.include_stats_var.get(),
             stats_scope=self.stats_scope_var.get(),
             selected_columns=selected_columns,
@@ -232,7 +258,8 @@ class ConverterApp:
     def _set_busy(self, busy: bool) -> None:
         if self.convert_button:
             self.convert_button.configure(state="disabled" if busy else "normal")
-        self.status_var.set("Converting..." if busy else "Ready")
+        if busy:
+            self.status_var.set("Converting...")
         self.root.update_idletasks()
 
     def _render_summary(self, summary: ResultSummary) -> None:
@@ -259,11 +286,12 @@ class ConverterApp:
         if not self.details_text:
             return
         clear_text(self.details_text)
+        self._set_busy(True)
         try:
             state = self._read_state()
             if not state.input_path:
-                raise ValueError("Input file is required")
-            self._set_busy(True)
+                raise ValueError("Input file is required.")
+
             options = self._to_options(state)
             result = convert_file(state.input_path, options, output_path=state.output_path or None)
 
@@ -286,24 +314,30 @@ class ConverterApp:
             )
             self._render_summary(summary)
 
+            append_text(self.details_text, f"Output file: {result.output_file}")
             if result.warnings:
                 append_text(self.details_text, "Warnings:")
                 for warning in result.warnings:
                     append_text(self.details_text, f"- {warning}")
             else:
                 append_text(self.details_text, "No warnings reported.")
-            self.status_var.set("Done")
+
+            self.output_var.set(result.output_file)
+            self.status_var.set("Conversion complete")
+            messagebox.showinfo("Success", f"Conversion completed successfully.\n\nOutput: {result.output_file}")
         except Exception as exc:
             self.status_var.set("Error")
             append_text(self.details_text, f"Error: {exc}")
             messagebox.showerror("Conversion failed", str(exc))
         finally:
             self._set_busy(False)
+            if self.status_var.get() == "Ready":
+                self.status_var.set("Ready")
 
 
 def main() -> None:
     root = tk.Tk()
-    app = ConverterApp(root)
+    ConverterApp(root)
     root.minsize(920, 760)
     root.mainloop()
 

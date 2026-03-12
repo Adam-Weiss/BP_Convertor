@@ -8,6 +8,7 @@ from .models import Measurement
 
 
 def norm_cell_text(x: Any) -> str:
+    """Normalize a raw worksheet/csv cell into compact single-line text."""
     if x is None:
         return ""
     s = str(x)
@@ -16,6 +17,7 @@ def norm_cell_text(x: Any) -> str:
 
 
 def to_int(value: Any) -> Optional[int]:
+    """Convert a cell value to int when possible, otherwise None."""
     s = norm_cell_text(value)
     if s == "" or s.lower() == "nan" or s.upper() == "NA":
         return None
@@ -26,6 +28,7 @@ def to_int(value: Any) -> Optional[int]:
 
 
 def to_float(value: Any) -> Optional[float]:
+    """Convert a cell value to float when possible, otherwise None."""
     s = norm_cell_text(value)
     if s == "" or s.lower() == "nan" or s.upper() == "NA":
         return None
@@ -36,6 +39,7 @@ def to_float(value: Any) -> Optional[float]:
 
 
 def split_tags(tag_cell: Any) -> str:
+    """Return tags in SmartBP-compatible comma-separated format."""
     s = norm_cell_text(tag_cell)
     if s in ("", "0"):
         return ""
@@ -44,6 +48,7 @@ def split_tags(tag_cell: Any) -> str:
 
 
 def build_notes(tags: str, user_notes: str, extra_note: str) -> str:
+    """Build SmartBP-compatible notes payload from tags, user notes, and warnings."""
     user_notes = norm_cell_text(user_notes)
     extra_note = norm_cell_text(extra_note)
     if user_notes == "0":
@@ -59,6 +64,7 @@ def build_notes(tags: str, user_notes: str, extra_note: str) -> str:
 
 
 def parse_datetime_value(date_value: Any, time_value: Any = None) -> datetime:
+    """Parse datetime from combined datetime or split date/time fields."""
     if isinstance(date_value, datetime):
         dt = date_value
     elif isinstance(date_value, date) and not isinstance(date_value, datetime):
@@ -69,10 +75,12 @@ def parse_datetime_value(date_value: Any, time_value: Any = None) -> datetime:
             s = f"{s} {norm_cell_text(time_value)}".strip()
         if not s:
             raise ValueError("Empty datetime")
+
         fmts = [
             "%m/%d/%y %H:%M:%S", "%m/%d/%Y %H:%M:%S", "%m/%d/%y %H:%M", "%m/%d/%Y %H:%M",
             "%d-%b-%y %H:%M:%S", "%d-%b-%Y %H:%M:%S", "%d-%b-%y %H:%M", "%d-%b-%Y %H:%M",
-            "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%m/%d/%y", "%m/%d/%Y", "%Y-%m-%d",
+            "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y/%m/%d %H:%M:%S", "%Y/%m/%d %H:%M",
+            "%m/%d/%y", "%m/%d/%Y", "%Y-%m-%d", "%Y/%m/%d", "%d-%b-%Y", "%d-%b-%y",
         ]
         dt = None
         for fmt in fmts:
@@ -82,14 +90,18 @@ def parse_datetime_value(date_value: Any, time_value: Any = None) -> datetime:
             except ValueError:
                 continue
         if dt is None:
-            m = re.match(r"^(\d{1,2})/(\d{1,2})/(\d{2,4})(?: (\d{1,2}):(\d{2})(?::(\d{2}))?)?$", s)
+            m = re.match(r"^(\d{1,4})[/-](\d{1,2})[/-](\d{1,4})(?: (\d{1,2}):(\d{2})(?::(\d{2}))?)?$", s)
             if not m:
                 raise ValueError(f"Unrecognized Date format: {s!r}")
-            mm, dd, yy, hh, mi, ss = m.groups()
-            year = int(yy)
-            if year < 100:
-                year += 2000
-            dt = datetime(year, int(mm), int(dd), int(hh or 0), int(mi or 0), int(ss or 0))
+            p1, p2, p3, hh, mi, ss = m.groups()
+            a, b, c = int(p1), int(p2), int(p3)
+            if a > 31:
+                year, mm, dd = a, b, c
+            else:
+                mm, dd, year = a, b, c
+                if year < 100:
+                    year += 2000
+            dt = datetime(year, mm, dd, int(hh or 0), int(mi or 0), int(ss or 0))
 
     if isinstance(time_value, time):
         dt = dt.replace(hour=time_value.hour, minute=time_value.minute, second=time_value.second)
@@ -97,6 +109,7 @@ def parse_datetime_value(date_value: Any, time_value: Any = None) -> datetime:
 
 
 def normalize_rows(rows: List[List[Any]], roles: Dict[str, int], source: int) -> List[Measurement]:
+    """Normalize detected table rows into Measurement records."""
     out: List[Measurement] = []
     for idx, row in enumerate(rows, start=1):
         date_idx = roles.get("datetime", roles.get("date"))
@@ -105,7 +118,10 @@ def normalize_rows(rows: List[List[Any]], roles: Dict[str, int], source: int) ->
             continue
         date_raw = row[date_idx]
         time_raw = row[time_idx] if (time_idx is not None and time_idx < len(row)) else None
-        dt = parse_datetime_value(date_raw, time_raw)
+        try:
+            dt = parse_datetime_value(date_raw, time_raw)
+        except ValueError:
+            continue
         sys_v = to_int(row[roles["sys"]]) if roles.get("sys") is not None and roles["sys"] < len(row) else None
         dia_v = to_int(row[roles["dia"]]) if roles.get("dia") is not None and roles["dia"] < len(row) else None
         if sys_v is None or dia_v is None:

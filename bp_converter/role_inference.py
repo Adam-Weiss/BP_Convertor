@@ -19,6 +19,10 @@ ROLE_SYNONYMS = {
 }
 
 
+def _compact_header(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", value.lower())
+
+
 def normalize_header(value: Any) -> str:
     if value is None:
         return ""
@@ -27,8 +31,18 @@ def normalize_header(value: Any) -> str:
 
 
 def infer_roles(headers: Iterable[Any]) -> Dict[str, int]:
+    """Infer semantic column roles from a header row.
+
+    Matching is intentionally tolerant to capitalization, spacing, and
+    punctuation so exports from different health apps can still be mapped.
+    """
     roles: Dict[str, int] = {}
     normalized = [normalize_header(h) for h in headers]
+    compact = [_compact_header(h) for h in normalized]
+    compact_synonyms = {
+        role: {_compact_header(s) for s in synonyms}
+        for role, synonyms in ROLE_SYNONYMS.items()
+    }
 
     for idx, hdr in enumerate(normalized):
         if not hdr:
@@ -36,7 +50,7 @@ def infer_roles(headers: Iterable[Any]) -> Dict[str, int]:
         for role, synonyms in ROLE_SYNONYMS.items():
             if role in roles:
                 continue
-            if hdr in synonyms:
+            if hdr in synonyms or compact[idx] in compact_synonyms[role]:
                 roles[role] = idx
                 break
 

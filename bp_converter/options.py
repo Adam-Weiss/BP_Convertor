@@ -7,6 +7,8 @@ from typing import List, Optional
 
 @dataclass
 class ConversionOptions:
+    """Runtime options for conversion behavior and output."""
+
     source: int = 0
     missing_pulse_policy: str = "empty"
     fixed_pulse_value: Optional[int] = None
