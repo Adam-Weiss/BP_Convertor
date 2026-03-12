@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from statistics import mean
-from typing import Iterable, List
+from typing import List
 
 from .models import ConversionStats, Measurement
 
 
 def build_stats(rows_read: int, selected: List[Measurement], exported: List[Measurement], skipped: int) -> ConversionStats:
+    """Build summary statistics for conversion results."""
     stats = ConversionStats()
     stats.rows_read = rows_read
     stats.rows_selected = len(selected)

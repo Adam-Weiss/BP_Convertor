@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import csv
 from datetime import datetime
-from typing import Iterable, List
+from typing import List
 
 from .models import ConversionStats, Measurement
 
@@ -27,6 +27,7 @@ ALLOWED_COLUMNS = [
 
 
 def fmt_smartbp_datetime(dt: datetime) -> str:
+    """Format datetime for SmartBP CSV compatibility."""
     return dt.strftime("%m/%d/%y %H:%M:%S")
 
 
@@ -35,6 +36,7 @@ def _str_or_blank(value: object) -> str:
 
 
 def write_smartbp_csv(path: str, measurements: List[Measurement]) -> None:
+    """Write measurements in SmartBP-compatible CSV format."""
     with open(path, "w", encoding="utf-8", newline="") as f:
         writer = csv.writer(
             f,
@@ -83,6 +85,7 @@ def _measurement_to_dict(m: Measurement) -> dict:
 
 
 def write_normalized_xlsx(path: str, measurements: List[Measurement], columns: List[str], stats: ConversionStats | None = None) -> None:
+    """Write normalized measurements to XLSX with optional stats sheet."""
     from openpyxl import Workbook
 
     wb = Workbook()

@@ -7,6 +7,8 @@ from typing import List, Optional
 
 @dataclass
 class Measurement:
+    """Normalized blood-pressure measurement row."""
+
     datetime: datetime
     sys: int
     dia: int
@@ -26,6 +28,8 @@ class Measurement:
 
 @dataclass
 class ConversionStats:
+    """Aggregate conversion statistics."""
+
     rows_read: int = 0
     rows_selected: int = 0
     rows_exported: int = 0
@@ -49,6 +53,8 @@ class ConversionStats:
 
 @dataclass
 class ConversionResult:
+    """Conversion output metadata and diagnostics."""
+
     output_file: str
     stats: ConversionStats
     warnings: List[str]

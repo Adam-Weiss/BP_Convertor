@@ -34,8 +34,21 @@ def _apply_filter(measurements: List[Measurement], start: Optional[datetime], en
 
 
 def convert_file(input_path: str, options: ConversionOptions, output_path: Optional[str] = None) -> ConversionResult:
-    table = detect_table(input_path)
+    """Convert one input file into SmartBP CSV or normalized XLSX output."""
+    try:
+        table = detect_table(input_path)
+    except ValueError as exc:
+        raise ValueError(
+            f"{exc} Suggestions: verify delimiter/headers, remove report text-only files, and ensure BP columns exist."
+        ) from exc
+
     normalized = normalize_rows(table.rows, table.roles, source=options.source)
+    if not normalized:
+        raise ValueError(
+            "A table was detected but no valid BP measurements could be parsed. "
+            "Check datetime formats and ensure systolic/diastolic cells are numeric."
+        )
+
     rows_read = len(table.rows)
     validated = validate_measurements(normalized, options)
     selected = _apply_filter(validated, options.filter_start, options.filter_end)
